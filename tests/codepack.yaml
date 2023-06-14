@@ -1,0 +1,10 @@
+repos:
+  - name: grype
+    path: tools
+    url: "https://github.com/anchore/grype.git"
+  - name: semgrep
+    path: tools
+    url: "https://github.com/returntocorp/semgrep.git"
+  - name: cobra
+    path: development
+    url: "https://github.com/spf13/cobra.git"
