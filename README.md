@@ -10,6 +10,12 @@ A CLI tool to create local backups for multiple git repositories
 
 `url` the url to the target git repository
 
+CodePack supports basic authentication via Environment variables
+
+`CODEPACK_GIT_USER`: The username for git, if using a token, username should be `token`
+
+`CODEPACK_GIT_PASS`: the password / token for git
+
 ```yaml 
 repos:
   - name: grype

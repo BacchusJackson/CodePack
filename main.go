@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +29,18 @@ func main() {
 	configFilePtr := flag.String("config", "codepack.yaml", "Configuration file")
 
 	flag.Parse()
+
+	username := os.Getenv("CODEPACK_GIT_USER")
+	pass := os.Getenv("CODEPACK_GIT_PASS")
+
+	var auth *http.BasicAuth
+
+	if username != "" && pass != "" {
+		auth = &http.BasicAuth{
+			Username: username,
+			Password: pass,
+		}
+	}
 
 	log.Println("Output File:", *outFilePtr)
 	log.Println("Configuration File:", *configFilePtr)
@@ -54,7 +67,7 @@ func main() {
 		}
 	}()
 
-	if err := cloneRepos(config, tempDir); err != nil {
+	if err := cloneRepos(config, tempDir, auth); err != nil {
 		panic(err)
 	}
 
@@ -107,7 +120,7 @@ func compress(src string, buf io.Writer) error {
 	return nil
 }
 
-func cloneRepos(config *Config, tempDir string) error {
+func cloneRepos(config *Config, tempDir string, auth *http.BasicAuth) error {
 	var wg sync.WaitGroup
 	resultChan := make(chan string)
 	var failures atomic.Int32
@@ -119,7 +132,7 @@ func cloneRepos(config *Config, tempDir string) error {
 
 		go func(u string, p string) {
 			defer wg.Done()
-			if err := bareMirrorClone(u, p); err != nil {
+			if err := bareMirrorClone(u, p, auth); err != nil {
 				resultChan <- fmt.Sprintf("Cloning %s to path %s failed: %v", u, p, err)
 				failures.Add(1)
 				return
@@ -177,10 +190,11 @@ func ConfigFromFile(filename string) (*Config, error) {
 	return config, err
 }
 
-func bareMirrorClone(url string, path string) error {
+func bareMirrorClone(url string, path string, auth *http.BasicAuth) error {
 	_, err := git.PlainClone(path, true, &git.CloneOptions{
 		URL:    url,
 		Mirror: true,
+		Auth: auth,
 	})
 
 	return err
