@@ -12,7 +12,7 @@ A CLI tool to create local backups for multiple git repositories
 
 CodePack supports basic authentication via Environment variables
 
-`CODEPACK_GIT_USER`: The username for git, if using a token, username should be `token`
+`CODEPACK_GIT_USER`: The username for git, if using a GitHub token, username should be `token`
 
 `CODEPACK_GIT_PASS`: the password / token for git
 
@@ -36,6 +36,8 @@ Usage of codepack:
         Configuration file (default "codepack.yaml")
   -out string
         Output filename for the tarball (default "2023-06-14-git-backup.tar.gz")
+  -workers int
+        Number of works for cloning repos (default 10)
 ```
 
 ```bash

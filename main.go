@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,6 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var workers = 10
+
 func main() {
 	log.SetPrefix("DEBUG ")
 	log.SetFlags(0)
@@ -27,11 +30,13 @@ func main() {
 
 	outFilePtr := flag.String("out", defaultOutfile, "Output filename for the tarball")
 	configFilePtr := flag.String("config", "codepack.yaml", "Configuration file")
+	workersPtr := flag.Int("workers", 10, "Number of works for cloning repos")
 
 	flag.Parse()
 
 	username := os.Getenv("CODEPACK_GIT_USER")
 	pass := os.Getenv("CODEPACK_GIT_PASS")
+	workers = *workersPtr
 
 	var auth *http.BasicAuth
 
@@ -122,24 +127,32 @@ func compress(src string, buf io.Writer) error {
 
 func cloneRepos(config *Config, tempDir string, auth *http.BasicAuth) error {
 	var wg sync.WaitGroup
-	resultChan := make(chan string)
 	var failures atomic.Int32
+	var successes atomic.Int32
 
-	for _, repo := range config.Repos {
-		clonePath := path.Join(tempDir, repo.Path, repo.Name)
-		log.Printf("Clone %s from %s to path %s\n", repo.Name, repo.URL, clonePath)
-		wg.Add(1)
+	type request struct {
+		url  string
+		path string
+	}
+	resultChan := make(chan string)
 
-		go func(u string, p string) {
-			defer wg.Done()
-			if err := bareMirrorClone(u, p, auth); err != nil {
-				resultChan <- fmt.Sprintf("Cloning %s to path %s failed: %v", u, p, err)
-				failures.Add(1)
-				return
+	repoChan := make(chan request)
+
+	for i := 0; i < int(math.Min(float64(workers), float64(len(config.Repos)))); i++ {
+		go func() {
+			for {
+				req := <-repoChan
+				resultChan <- fmt.Sprintf("Cloning %s to path %s", req.url, req.path)
+				if err := bareMirrorClone(req.url, req.path, auth); err != nil {
+					resultChan <- fmt.Sprintf("Cloning %s to path %s failed: %v", req.url, req.path, err)
+					failures.Add(1)
+					wg.Done()
+					continue
+				}
+				successes.Add(1)
+				wg.Done()
 			}
-			resultChan <- fmt.Sprintf("Cloned %s", u)
-		}(repo.URL, clonePath)
-
+		}()
 	}
 
 	// Log results from each goroutine
@@ -154,6 +167,12 @@ func cloneRepos(config *Config, tempDir string, auth *http.BasicAuth) error {
 			log.Println(msg)
 		}
 	}()
+
+	for _, repo := range config.Repos {
+		wg.Add(1)
+		clonePath := path.Join(tempDir, repo.Path, repo.Name)
+		repoChan <- request{url: repo.URL, path: clonePath}
+	}
 
 	wg.Wait()
 	wg.Add(1)
@@ -194,7 +213,7 @@ func bareMirrorClone(url string, path string, auth *http.BasicAuth) error {
 	_, err := git.PlainClone(path, true, &git.CloneOptions{
 		URL:    url,
 		Mirror: true,
-		Auth: auth,
+		Auth:   auth,
 	})
 
 	return err
