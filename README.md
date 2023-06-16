@@ -34,8 +34,14 @@ Usage of codepack:
 
   -config string
         Configuration file (default "codepack.yaml")
+  -log string
+        optional log file for log output
   -out string
-        Output filename for the tarball (default "2023-06-14-git-backup.tar.gz")
+        Output filename for the tarball (default "2023-06-16-git-backup.tar.gz")
+  -skiptar
+        do not tarball and compress codepack content
+  -version
+        output version information and exit
   -workers int
         Number of works for cloning repos (default 10)
 ```

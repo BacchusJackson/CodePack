@@ -22,6 +22,14 @@ import (
 )
 
 var workers = 10
+const VERSION = "v0.1.3"
+
+func Exit(err error) {
+	if err != nil {
+		os.Exit(-1)
+	}
+	os.Exit(1)
+}
 
 func main() {
 	log.SetPrefix("DEBUG ")
@@ -31,8 +39,16 @@ func main() {
 	outFilePtr := flag.String("out", defaultOutfile, "Output filename for the tarball")
 	configFilePtr := flag.String("config", "codepack.yaml", "Configuration file")
 	workersPtr := flag.Int("workers", 10, "Number of works for cloning repos")
+	logFilePtr := flag.String("log", "", "optional log file for log output")
+	versionPtr := flag.Bool("version", false, "output version information and exit")
+	skipTarPtr := flag.Bool("skiptar", false, "do not tarball and compress codepack content")
 
 	flag.Parse()
+
+	if *versionPtr {
+		fmt.Println("CodePack", VERSION)
+		Exit(nil)
+	}
 
 	username := os.Getenv("CODEPACK_GIT_USER")
 	pass := os.Getenv("CODEPACK_GIT_PASS")
@@ -47,39 +63,68 @@ func main() {
 		}
 	}
 
+	if *logFilePtr != "" {
+		f, err := os.OpenFile(*logFilePtr, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+		if err != nil {
+			Exit(fmt.Errorf("Cannot open log file: %w", err))
+		}
+		w := io.MultiWriter(f, os.Stderr)
+		log.SetOutput(w)
+	}
+
 	log.Println("Output File:", *outFilePtr)
 	log.Println("Configuration File:", *configFilePtr)
+	if *skipTarPtr {
+		log.Println("Skipping Tarball.")
+	}
 
 	config, err := ConfigFromFile(*configFilePtr)
 	if err != nil {
-		panic(err)
-	}
-
-	outputFile, err := os.Create(*outFilePtr)
-	if err != nil {
-		panic(err)
+		Exit(fmt.Errorf("Failed to open Configuration file '%s': %w", *configFilePtr, err))
 	}
 
 	tempDir, err := os.MkdirTemp(path.Join(os.TempDir()), "codepack")
 	if err != nil {
-		panic(err)
+		Exit(err)
 	}
 	defer func() {
 		// Clean up temp directory
+		if *skipTarPtr {
+			return
+		}
 		log.Println("Cleaning up temporary directory...")
 		if err := os.RemoveAll(tempDir); err != nil {
-			panic(err)
+			Exit(fmt.Errorf("Failed to cleanup temporary directory'%s': %w", tempDir, err))
 		}
 	}()
 
 	if err := cloneRepos(config, tempDir, auth); err != nil {
-		panic(err)
+		Exit(err)
 	}
 
-	if err := compress(tempDir, outputFile); err != nil {
-		panic(err)
+	if *skipTarPtr {
+		outputFilename := *outFilePtr
+		if outputFilename == defaultOutfile {
+			outputFilename = fmt.Sprintf("%s-codepack", time.Now().Format("2006-01-02"))
+		}
+		log.Printf("Moving '%s' to '%s'", tempDir, outputFilename)
+		if err := os.Rename(tempDir, outputFilename); err != nil {
+			Exit(fmt.Errorf("Failed to move '%s' to '%s': %w", tempDir, *outFilePtr, err))
+		}
+		Exit(nil)
 	}
 
+	if err := compressToFile(tempDir, *outFilePtr); err != nil {
+		Exit(fmt.Errorf("Failed to compress files from '%s' to '%s': %w", tempDir, *outFilePtr, err))
+	}
+}
+
+func compressToFile(src string, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return fmt.Errorf("Cannot open output file: %v", err)
+	}
+	return compress(src, outputFile)
 }
 
 func compress(src string, buf io.Writer) error {
@@ -149,6 +194,8 @@ func cloneRepos(config *Config, tempDir string, auth *http.BasicAuth) error {
 					wg.Done()
 					continue
 				}
+
+				resultChan <- fmt.Sprintf("Cloned %s to path %s", req.url, req.path)
 				successes.Add(1)
 				wg.Done()
 			}

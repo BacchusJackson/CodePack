@@ -7,6 +7,8 @@ GORELEASERCMD = goreleaser
 # Output binary name
 BINARY_NAME = codepack
 
+.PHONY: build clean snapshot release
+
 # Targets
 build:
 	mkdir -p bin
